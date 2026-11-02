@@ -1,0 +1,268 @@
+// Prisma 7: the connection URL lives in prisma.config.ts, and the client output path is required.
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// All money is stored as integer cents.
+
+enum ListingType {
+  AUCTION
+  BUY_NOW
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  ENDED_UNSOLD
+  CANCELLED
+}
+
+enum Condition {
+  NEW
+  LIKE_NEW
+  GOOD
+  FAIR
+  FOR_PARTS
+}
+
+enum DeliveryMethod {
+  PICKUP
+  LOCAL_DELIVERY
+  SHIPPED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  emailVerifiedAt DateTime?
+  school          String? // derived from .edu domain
+  passwordHash    String
+  displayName     String
+  role            Role      @default(USER)
+  createdAt       DateTime  @default(now())
+
+  listings      Listing[]
+  bids          Bid[]
+  purchases     Order[]   @relation("Buyer")
+  sales         Order[]   @relation("Seller")
+  messages      Message[]
+  saved         SavedListing[]
+  reportsMade   Report[]  @relation("Reporter")
+  reportsAgainst Report[] @relation("ReportedUser")
+  blocking      Block[]   @relation("Blocker")
+  blockedBy     Block[]   @relation("Blocked")
+  verifyTokens  EmailVerificationToken[]
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique // store a hash, never the raw token
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  listings Listing[]
+}
+
+model Listing {
+  id          String        @id @default(cuid())
+  sellerId    String
+  categoryId  String
+  title       String
+  description String
+  condition   Condition
+  type        ListingType
+  status      ListingStatus @default(ACTIVE)
+
+  // Auction: startPrice, optional reserve, endsAt. Buy now: buyNowPrice.
+  startPriceCents   Int?
+  reservePriceCents Int?
+  buyNowPriceCents  Int?
+  currentPriceCents Int // starting price, then highest bid, or the buy-now price
+  bidCount          Int       @default(0)
+  endsAt            DateTime? // auctions only
+  closeJobId        String? // BullMQ delayed job, replaced when anti-sniping extends endsAt
+
+  deliveryMethod   DeliveryMethod
+  deliveryFeeCents Int            @default(0)
+  deliveryNotes    String?
+
+  relistedFromId String?
+  relistedFrom   Listing?  @relation("Relist", fields: [relistedFromId], references: [id])
+  relistedAs     Listing[] @relation("Relist")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seller User     @relation(fields: [sellerId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+  images  ListingImage[]
+  bids    Bid[]
+  orders  Order[]
+  saves   SavedListing[]
+  reports Report[]
+
+  @@index([status, endsAt])
+  @@index([sellerId, status])
+  @@index([categoryId, status])
+
+
+}
+
+model ListingImage {
+  id        String  @id @default(cuid())
+  listingId String
+  storageKey String // object key in S3/R2, served from a separate domain
+  position  Int
+  width     Int
+  height    Int
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, position])
+}
+
+// Append-only. Never update or delete rows.
+model Bid {
+  id          String   @id @default(cuid())
+  listingId   String
+  bidderId    String
+  amountCents Int
+  createdAt   DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id])
+  bidder  User    @relation(fields: [bidderId], references: [id])
+
+  @@unique([listingId, amountCents]) // database-level backstop against equal simultaneous bids
+  @@index([listingId, amountCents(sort: Desc)])
+  @@index([bidderId])
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  listingId        String // one LIVE order per listing, enforced by a partial unique index in raw SQL
+  buyerId          String
+  sellerId         String
+  itemPriceCents   Int
+  deliveryFeeCents Int
+  totalCents       Int
+  status           OrderStatus @default(PENDING_PAYMENT)
+  stripeSessionId  String?     @unique
+  paidAt           DateTime?
+  paymentDueAt     DateTime? // auction winners get a window to pay
+  createdAt        DateTime    @default(now())
+
+  listing      Listing       @relation(fields: [listingId], references: [id])
+  buyer        User          @relation("Buyer", fields: [buyerId], references: [id])
+  seller       User          @relation("Seller", fields: [sellerId], references: [id])
+  conversation Conversation?
+
+  @@index([listingId])
+  @@index([buyerId])
+  @@index([sellerId])
+}
+
+// Participants are the order's buyer and seller, so there is no participant table.
+model Conversation {
+  id        String    @id @default(cuid())
+  orderId   String    @unique
+  createdAt DateTime  @default(now())
+  order     Order     @relation(fields: [orderId], references: [id])
+  messages  Message[]
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  body           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt])
+}
+
+model SavedListing {
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, listingId])
+}
+
+// Stripe event ids already handled, so retried webhooks do nothing.
+model ProcessedWebhookEvent {
+  eventId     String   @id
+  processedAt DateTime @default(now())
+}
+
+model Report {
+  id             String       @id @default(cuid())
+  reporterId     String
+  listingId      String?
+  reportedUserId String?
+  reason         String
+  status         ReportStatus @default(OPEN)
+  createdAt      DateTime     @default(now())
+
+  reporter     User     @relation("Reporter", fields: [reporterId], references: [id])
+  listing      Listing? @relation(fields: [listingId], references: [id])
+  reportedUser User?    @relation("ReportedUser", fields: [reportedUserId], references: [id])
+}
+
+model Block {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String // e.g. bid.placed, auction.closed, payment.confirmed
+  entity    String
+  entityId  String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}
