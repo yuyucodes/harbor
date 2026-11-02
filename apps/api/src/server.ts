@@ -2,9 +2,14 @@ import "dotenv/config";
 import Fastify from "fastify";
 import helmet from "@fastify/helmet";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
+import { authRoutes } from "./modules/auth/routes";
+import { redis } from "./lib/redis";
 
 export function buildServer() {
   const app = Fastify({ logger: true, trustProxy: true });
+  app.register(rateLimit, { global: false, redis });
+  app.register(authRoutes, { prefix: "/api" });
   app.register(helmet);
   app.register(cookie);
   app.get("/health", async () => ({ ok: true }));
