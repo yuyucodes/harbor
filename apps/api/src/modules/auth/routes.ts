@@ -5,6 +5,8 @@ import { signupSchema, loginSchema } from "@harbor/shared";
 import { prisma } from "../../lib/prisma";
 import { createSession, destroySession, getSessionUser, SESSION_COOKIE, SESSION_TTL } from "../../lib/session";
 
+const DUMMY_HASH = await argon2.hash("timing-placeholder");
+
 const cookieOpts = {
   httpOnly: true,
   sameSite: "lax" as const,
@@ -46,13 +48,18 @@ export async function authRoutes(app: FastifyInstance) {
   app.post("/auth/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+
     const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-    const ok = user ? await argon2.verify(user.passwordHash, parsed.data.password) : false;
+    const ok = await argon2.verify(user?.passwordHash ?? DUMMY_HASH, parsed.data.password);
     if (!user || !ok) return reply.code(401).send({ error: "Incorrect email or password" });
+    if (!user.emailVerifiedAt) return reply.code(403).send({ error: "Verify your email first" });
+
+    const oldSid = req.cookies[SESSION_COOKIE];
+    if (oldSid) await destroySession(oldSid);
 
     const sid = await createSession(user.id);
     reply.setCookie(SESSION_COOKIE, sid, cookieOpts);
-    return { id: user.id, displayName: user.displayName, verified: !!user.emailVerifiedAt };
+    return { id: user.id, displayName: user.displayName };
   });
 
   app.post("/auth/logout", async (req, reply) => {
@@ -66,10 +73,12 @@ export async function authRoutes(app: FastifyInstance) {
     const sid = req.cookies[SESSION_COOKIE];
     const userId = sid ? await getSessionUser(sid) : null;
     if (!userId) return reply.code(401).send({ error: "Not signed in" });
+
     const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, displayName: true, email: true, emailVerifiedAt: true },
+        where: { id: userId },
+        select: { id: true, displayName: true, email: true, emailVerifiedAt: true },
     });
+    if (!user) return reply.code(401).send({ error: "Not signed in" });
     return user;
   });
 }

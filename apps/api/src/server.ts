@@ -17,5 +17,5 @@ export function buildServer() {
 }
 
 if (process.env.NODE_ENV !== "test") {
-  buildServer().listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" });
+  buildServer().listen({ port: Number(process.env.PORT ?? 4000), host: "127.0.0.1" });
 }
