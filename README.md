@@ -1,12 +1,12 @@
 # Harborside
 
-A campus marketplace for Boston college students to buy and sell used items, by auction or at a fixed price. Think eBay or Mercari, scoped to student communities and focused on technology and collectibles.
+A campus marketplace for college students to buy and sell used items, by auction or at a fixed price. Think eBay or Depop, scoped to student communities and focused on technology and collectibles.
 
-Harbor is an early-stage build made entirely with free tools. Checkout will use Stripe test mode, so no real money moves.
+Harborside is an early-stage build made entirely with free tools.
 
 ## Status
 
-Work in progress. The backend comes first, then the web app.
+Work in progress.
 
 - [x] Monorepo, local services, database schema and migrations
 - [x] Student sign-up with `.edu` email verification, login, and Redis sessions
