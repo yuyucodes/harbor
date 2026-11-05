@@ -5,11 +5,13 @@ import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import { authRoutes } from "./modules/auth/routes";
 import { redis } from "./lib/redis";
+import { listingRoutes } from "./modules/listings/routes";
 
 export function buildServer() {
   const app = Fastify({ logger: true, trustProxy: true });
   app.register(rateLimit, { global: false, redis });
   app.register(authRoutes, { prefix: "/api" });
+  app.register(listingRoutes, { prefix: "/api" });
   app.register(helmet);
   app.register(cookie);
   app.get("/health", async () => ({ ok: true }));
