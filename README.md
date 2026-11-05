@@ -1,4 +1,4 @@
-# Harbor
+# Harborside
 
 A campus marketplace for Boston college students to buy and sell used items, by auction or at a fixed price. Think eBay or Mercari, scoped to student communities and focused on technology and collectibles.
 
