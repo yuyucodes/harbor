@@ -51,3 +51,32 @@ export const createListingSchema = z
         bad("type", "Auction fields are not allowed on buy now listings");
     }
   });
+
+  // Proposed increments: under $50 -> $1, $50 to under $200 -> $5, $200 and up -> $10
+export function bidIncrementCents(currentCents: number) {
+  if (currentCents < 5000) return 100;
+  if (currentCents < 20000) return 500;
+  return 1000;
+}
+
+// The first bid may equal the starting price. Later bids must beat the current price by the increment.
+export function minNextBidCents(l: { currentPriceCents: number; bidCount: number }) {
+  return l.bidCount === 0 ? l.currentPriceCents : l.currentPriceCents + bidIncrementCents(l.currentPriceCents);
+}
+
+export const bidSchema = z.strictObject({
+  amountCents: z.number().int().min(100).max(10_000_000),
+});
+
+// Only these fields can change, and only before the first bid. Unknown fields (like price) are rejected.
+export const updateListingSchema = z
+  .strictObject({
+    title: z.string().trim().min(3).max(120),
+    description: z.string().trim().min(10).max(5000),
+    condition: z.enum(["NEW", "LIKE_NEW", "GOOD", "FAIR", "FOR_PARTS"]),
+    deliveryMethod: z.enum(["PICKUP", "LOCAL_DELIVERY", "SHIPPED"]),
+    deliveryFeeCents: z.number().int().min(0).max(100_000),
+    deliveryNotes: z.string().trim().max(500),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to update");
