@@ -10,8 +10,8 @@ Work in progress.
 
 - [x] Monorepo, local services, database schema and migrations
 - [x] Student sign-up with `.edu` email verification, login, and Redis sessions
-- [ ] Listings API (create, browse, detail) *(in progress)*
-- [ ] Bidding with row-level locking and a 100-simultaneous-bids test
+- [x] Listings API (create, browse, detail) *(in progress)*
+- [x] Bidding with row-level locking and a 100-simultaneous-bids test
 - [ ] Auctions that close automatically, last-minute bid extensions, live price updates
 - [ ] Photo uploads and image processing
 - [ ] Test-mode payments and buyer-seller messaging
